@@ -23,6 +23,15 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AutomaticEnv()
 
+	// Явная привязка переменных окружения
+	viper.BindEnv("APP_HOST")
+	viper.BindEnv("APP_PORT")
+	viper.BindEnv("DATABASE_URL")
+	viper.BindEnv("REDIS_ADDR")
+	viper.BindEnv("REDIS_PASSWORD")
+	viper.BindEnv("REDIS_DB")
+	viper.BindEnv("LOG_LEVEL")
+
 	// Defaults
 	viper.SetDefault("APP_HOST", "0.0.0.0")
 	viper.SetDefault("APP_PORT", 8083)
@@ -39,7 +48,6 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Required fields validation
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
