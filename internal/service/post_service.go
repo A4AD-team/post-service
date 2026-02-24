@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"post-service/internal/domain"
 	"post-service/internal/dto"
+	"post-service/internal/event"
 	"post-service/internal/repository"
 	"time"
 
@@ -25,12 +25,13 @@ type PostService interface {
 }
 
 type postService struct {
-	repo  repository.PostRepository
-	redis *redis.Client
+	repo      repository.PostRepository
+	redis     *redis.Client
+	publisher *event.Publisher
 }
 
-func NewPostService(repo repository.PostRepository, redis *redis.Client) PostService {
-	return &postService{repo: repo, redis: redis}
+func NewPostService(repo repository.PostRepository, redis *redis.Client, publisher *event.Publisher) PostService {
+	return &postService{repo: repo, redis: redis, publisher: publisher}
 }
 
 func (s *postService) Create(ctx context.Context, authorID int64, username, avatarURL string, req *dto.CreatePostRequest) (*domain.Post, error) {
@@ -70,7 +71,7 @@ func (s *postService) ListPosts(ctx context.Context, q dto.ListPostsQuery, userI
 	if err != nil {
 		return nil, err
 	}
-	// Проставляем IsLikedByMe если пользователь авторизован
+	// We set IsLikedByMe if the user is authorized
 	if userID != 0 {
 		for i := range posts {
 			posts[i].IsLikedByMe, _ = s.repo.HasLiked(ctx, posts[i].ID, userID)
@@ -178,9 +179,5 @@ func (s *postService) Unlike(ctx context.Context, postID, userID int64) error {
 
 func (s *postService) publishEvent(ctx context.Context, eventType string, payload map[string]interface{}) {
 	payload["event"] = eventType
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	s.redis.Publish(ctx, "post_events", string(data))
+	s.publisher.Publish(ctx, "post_events", payload)
 }

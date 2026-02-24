@@ -6,7 +6,7 @@ import (
 	"log"
 	"post-service/internal/repository"
 
-	"github.com/redis/go-redis/v9"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type incomingEvent struct {
@@ -18,17 +18,32 @@ type incomingEvent struct {
 }
 
 type Consumer struct {
-	redis *redis.Client
-	repo  repository.PostRepository
+	conn *amqp.Connection
+	repo repository.PostRepository
 }
 
-func NewConsumer(redis *redis.Client, repo repository.PostRepository) *Consumer {
-	return &Consumer{redis: redis, repo: repo}
+func NewConsumer(amqpURL string, repo repository.PostRepository) (*Consumer, error) {
+	conn, err := amqp.Dial(amqpURL)
+	if err != nil {
+		return nil, err
+	}
+	return &Consumer{conn: conn, repo: repo}, nil
 }
 
 func (c *Consumer) Start(ctx context.Context) {
-	pubsub := c.redis.Subscribe(ctx, "comment_events", "profile_events")
-	defer pubsub.Close()
+	ch, err := c.conn.Channel()
+	if err != nil {
+		log.Fatalf("[consumer] channel error: %v", err)
+	}
+	defer ch.Close()
+
+	queues := []string{"comment_events", "profile_events"}
+	for _, q := range queues {
+		ch.QueueDeclare(q, true, false, false, false, nil)
+	}
+
+	commentMsgs, _ := ch.Consume("comment_events", "", true, false, false, false, nil)
+	profileMsgs, _ := ch.Consume("profile_events", "", true, false, false, false, nil)
 
 	log.Println("[consumer] subscribed to comment_events, profile_events")
 
@@ -37,13 +52,16 @@ func (c *Consumer) Start(ctx context.Context) {
 		case <-ctx.Done():
 			log.Println("[consumer] stopped")
 			return
-		case msg, ok := <-pubsub.Channel():
-			if !ok {
-				return
-			}
-			c.handle(ctx, msg.Channel, msg.Payload)
+		case msg := <-commentMsgs:
+			c.handle(ctx, "comment_events", string(msg.Body))
+		case msg := <-profileMsgs:
+			c.handle(ctx, "profile_events", string(msg.Body))
 		}
 	}
+}
+
+func (c *Consumer) Close() {
+	c.conn.Close()
 }
 
 func (c *Consumer) handle(ctx context.Context, channel, payload string) {

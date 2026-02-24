@@ -11,8 +11,8 @@ import (
 	"post-service/internal/config"
 	"post-service/internal/event"
 	"post-service/internal/handler"
-	"post-service/internal/middleware"
 	"post-service/internal/repository"
+	"post-service/internal/router"
 	"post-service/internal/service"
 
 	fiberprometheus "github.com/ansrivas/fiberprometheus/v2"
@@ -53,13 +53,25 @@ func main() {
 	}
 	defer rdb.Close()
 
-	// Зависимости
+	// Dependencies
 	repo := repository.NewPostRepository(pool)
-	postService := service.NewPostService(repo, rdb)
-	postHandler := handler.NewPostHandler(postService)
-	consumer := event.NewConsumer(rdb, repo)
 
-	// Event consumer в горутине
+	publisher, err := event.NewPublisher(cfg.RabbitMQURL)
+	if err != nil {
+		log.Fatalf("rabbitmq publisher: %v", err)
+	}
+	defer publisher.Close()
+
+	postService := service.NewPostService(repo, rdb, publisher)
+	postHandler := handler.NewPostHandler(postService)
+
+	consumer, err := event.NewConsumer(cfg.RabbitMQURL, repo)
+	if err != nil {
+		log.Fatalf("rabbitmq: %v", err)
+	}
+	defer consumer.Close()
+
+	// Event consumer in goroutine
 	go consumer.Start(ctx)
 
 	// Fiber
@@ -102,25 +114,10 @@ func main() {
 		return c.JSON(fiber.Map{"status": "healthy", "database": "healthy"})
 	})
 
-	// Маршруты
-	v1 := app.Group("/api/v1")
+	// Routes
+	router.Setup(app, postHandler)
 
-	// Публичные
-	v1.Get("/posts/search", postHandler.Search) // до /:id !
-	v1.Get("/posts/hot", postHandler.HotPosts)
-	v1.Get("/posts/top", postHandler.TopPosts)
-	v1.Get("/posts", postHandler.ListPosts)
-	v1.Get("/posts/:id", postHandler.GetPost)
-
-	// Защищённые
-	auth := v1.Group("/", middleware.AuthRequired())
-	auth.Post("/posts", postHandler.Create)
-	auth.Patch("/posts/:id", postHandler.Update)
-	auth.Delete("/posts/:id", postHandler.Delete)
-	auth.Post("/posts/:id/like", postHandler.Like)
-	auth.Delete("/posts/:id/like", postHandler.Unlike)
-
-	// Старт
+	// Start
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.AppHost, cfg.AppPort)
 		log.Printf("server listening on %s", addr)

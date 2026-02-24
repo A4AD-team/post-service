@@ -15,6 +15,7 @@ type Config struct {
 	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
 	RedisDB       int    `mapstructure:"REDIS_DB"`
 	LogLevel      string `mapstructure:"LOG_LEVEL"`
+	RabbitMQURL   string `mapstructure:"RABBITMQ_URL"`
 }
 
 func Load() (*Config, error) {
@@ -23,7 +24,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AutomaticEnv()
 
-	// Явная привязка переменных окружения
+	// Explicit environment binding
 	viper.BindEnv("APP_HOST")
 	viper.BindEnv("APP_PORT")
 	viper.BindEnv("DATABASE_URL")
@@ -38,6 +39,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("REDIS_ADDR", "localhost:6379")
 	viper.SetDefault("REDIS_DB", 0)
 	viper.SetDefault("LOG_LEVEL", "info")
+	viper.SetDefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+	viper.BindEnv("RABBITMQ_URL")
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("No .env file found, using defaults and env vars: %v", err)

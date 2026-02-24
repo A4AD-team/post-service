@@ -29,10 +29,10 @@ func AuthRequired() fiber.Handler {
 }
 
 func GetUserID(c *fiber.Ctx) int64 {
-	if id, ok := c.Locals("userID").(int64); ok && id != 0 {
+	if id, ok := c.Locals(UserIDKey).(int64); ok && id != 0 {
 		return id
 	}
-	// fallback для публичных маршрутов
+	// fallback for public routes
 	id, _ := strconv.ParseInt(c.Get("X-User-ID"), 10, 64)
 	return id
 }
