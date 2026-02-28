@@ -1,17 +1,17 @@
 package dto
 
 type CreatePostRequest struct {
-	Title    string   `json:"title"   validate:"required,min=3,max=300"`
-	Content  string   `json:"content" validate:"required,min=10,max=50000"`
+	Title    string   `json:"title"`
+	Content  string   `json:"content"`
 	Tags     []string `json:"tags,omitempty"`
-	AuthorID int64    `json:"author_id" validate:"required"`
+	AuthorID int64    `json:"-"`
 }
 
 type UpdatePostRequest struct {
 	Title    *string  `json:"title,omitempty"`
 	Content  *string  `json:"content,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
-	AuthorID int64    `json:"author_id" validate:"required"`
+	AuthorID int64    `json:"author_id"`
 }
 
 type ListPostsQuery struct {
