@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"post-service/internal/dto"
 	"post-service/internal/middleware"
 	"post-service/internal/service"
@@ -27,11 +28,16 @@ func (h *PostHandler) Create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
+	log.Printf("CreatePost: title=%q, content_len=%d, author_id=%d", req.Title, len(req.Content), req.AuthorID)
 	if err := h.validate.Struct(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	userID := middleware.GetUserID(c)
+	log.Printf("CreatePost: userID from header=%d", userID)
+	if req.AuthorID == 0 {
+		req.AuthorID = userID
+	}
 	username := c.Get("X-Username")
 	avatarURL := c.Get("X-User-Avatar")
 
