@@ -10,6 +10,12 @@ import (
 func Setup(app *fiber.App, h *handler.PostHandler) {
 	v1 := app.Group("/api/v1")
 
+	// Internal (no auth required - called by other services) - MUST be before :id routes
+	v1.Post("/posts/:id/comments/increment", h.IncrementComments)
+	v1.Post("/posts/:id/comments/decrement", h.DecrementComments)
+	v1.Post("/posts/:id/comments/sync", h.SyncCommentsCount)
+	v1.Post("/posts/comments/sync-all", h.SyncAllCommentsCounts)
+
 	// Public
 	v1.Get("/posts/search", h.Search)
 	v1.Get("/posts/hot", h.HotPosts)

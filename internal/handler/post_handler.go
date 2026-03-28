@@ -61,6 +61,8 @@ func (h *PostHandler) GetPost(c *fiber.Ctx) error {
 	}
 	if userID != 0 {
 		_ = h.svc.IncrementView(c.Context(), id, userID)
+	} else {
+		_ = h.svc.IncrementViewAnon(c.Context(), id)
 	}
 	return c.JSON(post)
 }
@@ -171,6 +173,51 @@ func (h *PostHandler) Unlike(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"action": "unliked"})
+}
+
+func (h *PostHandler) IncrementComments(c *fiber.Ctx) error {
+	id, err := parseID(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid post id"})
+	}
+
+	if err := h.svc.IncrementComments(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"action": "comments_incremented"})
+}
+
+func (h *PostHandler) DecrementComments(c *fiber.Ctx) error {
+	id, err := parseID(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid post id"})
+	}
+
+	if err := h.svc.DecrementComments(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"action": "comments_decremented"})
+}
+
+func (h *PostHandler) SyncCommentsCount(c *fiber.Ctx) error {
+	id, err := parseID(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid post id"})
+	}
+
+	count, err := h.svc.SyncCommentsCount(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"action": "comments_synced", "count": count})
+}
+
+func (h *PostHandler) SyncAllCommentsCounts(c *fiber.Ctx) error {
+	results, err := h.svc.SyncAllCommentsCounts(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"action": "all_comments_synced", "synced": len(results), "counts": results})
 }
 
 // --- Хелперы ---

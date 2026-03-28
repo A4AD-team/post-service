@@ -19,14 +19,17 @@ type PostRepository interface {
 	ListPostsFiltered(ctx context.Context, limit, offset int, sort, author, tag string) ([]domain.Post, error)
 	SearchPosts(ctx context.Context, query string, limit, offset int) ([]domain.Post, error)
 	IncrementView(ctx context.Context, postID int64) error
+	IncrementViewAnon(ctx context.Context, postID int64) error
 	IncrementLike(ctx context.Context, postID int64) error
 	DecrementLike(ctx context.Context, postID int64) error
 	IncrementComments(ctx context.Context, postID int64) error
 	DecrementComments(ctx context.Context, postID int64) error
+	SetCommentsCount(ctx context.Context, postID int64, count int64) error
 	AddLike(ctx context.Context, postID, userID int64) error
 	RemoveLike(ctx context.Context, postID, userID int64) error
 	HasLiked(ctx context.Context, postID, userID int64) (bool, error)
 	UpdateAuthorInfo(ctx context.Context, authorID int64, username, avatarURL string) error
+	GetAllPostIDs(ctx context.Context) ([]int64, error)
 }
 
 type postRepository struct {
@@ -222,6 +225,11 @@ func (r *postRepository) IncrementView(ctx context.Context, postID int64) error 
 	return err
 }
 
+func (r *postRepository) IncrementViewAnon(ctx context.Context, postID int64) error {
+	_, err := r.db.Exec(ctx, `UPDATE posts SET views = views + 1 WHERE id = $1`, postID)
+	return err
+}
+
 func (r *postRepository) IncrementLike(ctx context.Context, postID int64) error {
 	_, err := r.db.Exec(ctx, `UPDATE posts SET likes_count = likes_count + 1 WHERE id = $1`, postID)
 	return err
@@ -239,6 +247,11 @@ func (r *postRepository) IncrementComments(ctx context.Context, postID int64) er
 
 func (r *postRepository) DecrementComments(ctx context.Context, postID int64) error {
 	_, err := r.db.Exec(ctx, `UPDATE posts SET comments_count = GREATEST(comments_count - 1, 0) WHERE id = $1`, postID)
+	return err
+}
+
+func (r *postRepository) SetCommentsCount(ctx context.Context, postID int64, count int64) error {
+	_, err := r.db.Exec(ctx, `UPDATE posts SET comments_count = $1 WHERE id = $2`, count, postID)
 	return err
 }
 
@@ -270,4 +283,22 @@ func (r *postRepository) UpdateAuthorInfo(ctx context.Context, authorID int64, u
 		`UPDATE posts SET author_username = $2, author_avatar_url = $3 WHERE author_id = $1`,
 		authorID, username, avatarURL)
 	return err
+}
+
+func (r *postRepository) GetAllPostIDs(ctx context.Context) ([]int64, error) {
+	rows, err := r.db.Query(ctx, `SELECT id FROM posts WHERE deleted_at IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

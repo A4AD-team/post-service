@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"post-service/internal/domain"
 	"post-service/internal/dto"
 	"post-service/internal/event"
@@ -20,8 +23,13 @@ type PostService interface {
 	ListPosts(ctx context.Context, q dto.ListPostsQuery, userID int64) ([]domain.Post, error)
 	SearchPosts(ctx context.Context, query string, limit, offset int) ([]domain.Post, error)
 	IncrementView(ctx context.Context, postID, userID int64) error
+	IncrementViewAnon(ctx context.Context, postID int64) error
 	Like(ctx context.Context, postID, userID int64) error
 	Unlike(ctx context.Context, postID, userID int64) error
+	IncrementComments(ctx context.Context, postID int64) error
+	DecrementComments(ctx context.Context, postID int64) error
+	SyncCommentsCount(ctx context.Context, postID int64) (int64, error)
+	SyncAllCommentsCounts(ctx context.Context) (map[int64]int64, error)
 }
 
 type postService struct {
@@ -135,6 +143,10 @@ func (s *postService) IncrementView(ctx context.Context, postID, userID int64) e
 	return s.repo.IncrementView(ctx, postID)
 }
 
+func (s *postService) IncrementViewAnon(ctx context.Context, postID int64) error {
+	return s.repo.IncrementViewAnon(ctx, postID)
+}
+
 func (s *postService) Like(ctx context.Context, postID, userID int64) error {
 	hasLiked, err := s.repo.HasLiked(ctx, postID, userID)
 	if err != nil {
@@ -175,6 +187,90 @@ func (s *postService) Unlike(ctx context.Context, postID, userID int64) error {
 		"user_id": userID,
 	})
 	return nil
+}
+
+func (s *postService) IncrementComments(ctx context.Context, postID int64) error {
+	return s.repo.IncrementComments(ctx, postID)
+}
+
+func (s *postService) DecrementComments(ctx context.Context, postID int64) error {
+	return s.repo.DecrementComments(ctx, postID)
+}
+
+func (s *postService) SyncCommentsCount(ctx context.Context, postID int64) (int64, error) {
+	commentServiceURL := os.Getenv("COMMENT_SERVICE_URL")
+	if commentServiceURL == "" {
+		commentServiceURL = "http://comment-service:3000"
+	}
+
+	resp, err := http.Get(commentServiceURL + "/api/v1/comments/count?postId=" + fmt.Sprintf("%d", postID))
+	if err != nil {
+		return 0, fmt.Errorf("failed to get comment count: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("comment service returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Count int64 `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	err = s.repo.SetCommentsCount(ctx, postID, result.Count)
+	if err != nil {
+		return 0, err
+	}
+	return result.Count, nil
+}
+
+func (s *postService) SyncAllCommentsCounts(ctx context.Context) (map[int64]int64, error) {
+	postIDs, err := s.repo.GetAllPostIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get post IDs: %v", err)
+	}
+
+	commentServiceURL := os.Getenv("COMMENT_SERVICE_URL")
+	if commentServiceURL == "" {
+		commentServiceURL = "http://comment-service:3000"
+	}
+
+	results := make(map[int64]int64)
+
+	for _, postID := range postIDs {
+		resp, err := http.Get(commentServiceURL + "/api/v1/comments/count?postId=" + fmt.Sprintf("%d", postID))
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			continue
+		}
+
+		var result struct {
+			Count int64 `json:"count"`
+		}
+		resp, err = http.Get(commentServiceURL + "/api/v1/comments/count?postId=" + fmt.Sprintf("%d", postID))
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			continue
+		}
+
+		if err := s.repo.SetCommentsCount(ctx, postID, result.Count); err != nil {
+			continue
+		}
+		results[postID] = result.Count
+	}
+
+	return results, nil
 }
 
 func (s *postService) publishEvent(ctx context.Context, eventType string, payload map[string]interface{}) {
